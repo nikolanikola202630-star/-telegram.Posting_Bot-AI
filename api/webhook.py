@@ -4,7 +4,7 @@ import sys
 import json
 import logging
 import asyncio
-from urllib.parse import parse_qs
+from http.server import BaseHTTPRequestHandler
 
 # Добавляем путь к модулям
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -28,6 +28,7 @@ def get_application():
     global application
     if application is None:
         if not TELEGRAM_BOT_TOKEN:
+            logger.error("TELEGRAM_BOT_TOKEN не установлен")
             raise ValueError("TELEGRAM_BOT_TOKEN не установлен")
         
         # Инициализация БД
@@ -49,57 +50,73 @@ def get_application():
     
     return application
 
-def handler(event, context):
-    """Vercel serverless function handler"""
-    try:
-        # Получаем приложение
-        app = get_application()
-        
-        # Получаем метод и тело запроса
-        http_method = event.get('httpMethod', event.get('method', 'GET'))
-        
-        # Обработка GET запроса (healthcheck)
-        if http_method == 'GET':
-            return {
-                'statusCode': 200,
-                'headers': {'Content-Type': 'application/json'},
-                'body': json.dumps({
-                    'status': 'running',
-                    'service': 'Telegram Bot Webhook',
-                    'version': '1.0'
-                })
-            }
-        
-        # Обработка POST запроса (webhook)
-        if http_method == 'POST':
-            body = event.get('body', '')
-            if event.get('isBase64Encoded'):
-                import base64
-                body = base64.b64decode(body).decode('utf-8')
+class handler(BaseHTTPRequestHandler):
+    """Vercel Python handler (WSGI-style)"""
+    
+    def do_GET(self):
+        """Обработка GET запросов (healthcheck)"""
+        try:
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
             
-            update_data = json.loads(body)
+            response = json.dumps({
+                'status': 'running',
+                'service': 'Telegram Bot Webhook',
+                'version': '1.0'
+            })
+            self.wfile.write(response.encode())
+            
+        except Exception as e:
+            logger.error(f"Ошибка GET: {e}", exc_info=True)
+            self.send_response(500)
+            self.end_headers()
+    
+    def do_POST(self):
+        """Обработка POST запросов от Telegram"""
+        try:
+            # Получаем приложение (ленивая инициализация)
+            app = get_application()
+            
+            # Читаем тело запроса
+            content_length = int(self.headers.get('Content-Length', 0))
+            if content_length == 0:
+                self.send_response(400)
+                self.send_header('Content-Type', 'text/plain')
+                self.end_headers()
+                self.wfile.write(b'Bad Request: Empty body')
+                return
+            
+            body = self.rfile.read(content_length)
+            update_data = json.loads(body.decode('utf-8'))
+            
+            logger.info(f"Получен update: {update_data.get('update_id')}")
             
             # Создаем Update объект
             update = Update.de_json(update_data, app.bot)
             
-            # Обработка update
+            # Обработка update асинхронно
             asyncio.run(app.process_update(update))
             
-            return {
-                'statusCode': 200,
-                'headers': {'Content-Type': 'text/plain'},
-                'body': 'OK'
-            }
-        
-        return {
-            'statusCode': 405,
-            'body': 'Method Not Allowed'
-        }
-        
-    except Exception as e:
-        logger.error(f"Ошибка обработки webhook: {e}", exc_info=True)
-        return {
-            'statusCode': 500,
-            'headers': {'Content-Type': 'text/plain'},
-            'body': f'Error: {str(e)}'
-        }
+            # Отправляем ответ
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/plain')
+            self.end_headers()
+            self.wfile.write(b'OK')
+            
+            logger.info("Update обработан успешно")
+            
+        except json.JSONDecodeError as e:
+            logger.error(f"Ошибка парсинга JSON: {e}")
+            self.send_response(400)
+            self.send_header('Content-Type', 'text/plain')
+            self.end_headers()
+            self.wfile.write(b'Bad Request: Invalid JSON')
+            
+        except Exception as e:
+            logger.error(f"Ошибка обработки webhook: {e}", exc_info=True)
+            self.send_response(500)
+            self.send_header('Content-Type', 'text/plain')
+            self.end_headers()
+            self.wfile.write(f'Error: {str(e)}'.encode())
+

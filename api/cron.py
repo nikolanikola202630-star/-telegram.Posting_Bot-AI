@@ -4,6 +4,7 @@ import sys
 import json
 import logging
 import asyncio
+from http.server import BaseHTTPRequestHandler
 from datetime import datetime
 
 # Добавляем путь к модулям
@@ -103,7 +104,6 @@ async def auto_publish():
                     break
                 else:
                     logger.warning(f"⚠️ Попытка {attempt + 1}: Пост слишком похож на предыдущий")
-                    # Добавляем в промпт требование большей уникальности
                     enhanced_prompt += f"\n\nПОПЫТКА {attempt + 2}: Создай СОВЕРШЕННО ДРУГОЙ пост, не похожий на предыдущие!"
                     post = None
             
@@ -142,24 +142,29 @@ async def auto_publish():
     logger.info(f"Результат автопубликации: {result}")
     return result
 
-def handler(event, context):
-    """Vercel cron handler"""
-    try:
-        # Инициализация при первом запросе
-        ensure_initialized()
-        
-        result = asyncio.run(auto_publish())
-        
-        return {
-            'statusCode': 200,
-            'headers': {'Content-Type': 'application/json'},
-            'body': json.dumps(result, ensure_ascii=False)
-        }
-        
-    except Exception as e:
-        logger.error(f"Ошибка cron: {e}", exc_info=True)
-        return {
-            'statusCode': 500,
-            'headers': {'Content-Type': 'application/json'},
-            'body': json.dumps({'error': str(e)}, ensure_ascii=False)
-        }
+class handler(BaseHTTPRequestHandler):
+    """Vercel cron handler (WSGI-style)"""
+    
+    def do_GET(self):
+        """Обработка cron задачи"""
+        try:
+            # Инициализация при первом запросе
+            ensure_initialized()
+            
+            # Выполнение автопубликации
+            result = asyncio.run(auto_publish())
+            
+            # Отправка ответа
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json; charset=utf-8')
+            self.end_headers()
+            self.wfile.write(json.dumps(result, ensure_ascii=False).encode('utf-8'))
+            
+        except Exception as e:
+            logger.error(f"Ошибка cron: {e}", exc_info=True)
+            self.send_response(500)
+            self.send_header('Content-Type', 'application/json; charset=utf-8')
+            self.end_headers()
+            error_response = json.dumps({'error': str(e)}, ensure_ascii=False)
+            self.wfile.write(error_response.encode('utf-8'))
+
