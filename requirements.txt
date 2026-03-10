@@ -2,3 +2,4 @@ python-telegram-bot==22.5
 groq==0.34.1
 python-dotenv==1.2.1
 psycopg2-binary==2.9.9
+nest-asyncio==1.6.0

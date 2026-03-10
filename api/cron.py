@@ -4,8 +4,12 @@ import sys
 import json
 import logging
 import asyncio
+import nest_asyncio
 from http.server import BaseHTTPRequestHandler
 from datetime import datetime
+
+# Применяем nest_asyncio
+nest_asyncio.apply()
 
 # Добавляем путь к модулям
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -151,14 +155,8 @@ class handler(BaseHTTPRequestHandler):
             # Инициализация при первом запросе
             ensure_initialized()
             
-            # Выполнение автопубликации с правильным event loop
-            try:
-                loop = asyncio.get_event_loop()
-            except RuntimeError:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-            
-            result = loop.run_until_complete(auto_publish())
+            # Выполнение автопубликации
+            result = asyncio.run(auto_publish())
             
             # Отправка ответа
             self.send_response(200)

@@ -4,7 +4,11 @@ import sys
 import json
 import logging
 import asyncio
+import nest_asyncio
 from http.server import BaseHTTPRequestHandler
+
+# Применяем nest_asyncio для работы с вложенными event loops
+nest_asyncio.apply()
 
 # Добавляем путь к модулям
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -95,14 +99,8 @@ class handler(BaseHTTPRequestHandler):
             # Создаем Update объект
             update = Update.de_json(update_data, app.bot)
             
-            # Обработка update асинхронно с правильным event loop
-            try:
-                loop = asyncio.get_event_loop()
-            except RuntimeError:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-            
-            loop.run_until_complete(app.process_update(update))
+            # Обработка update асинхронно
+            asyncio.run(app.process_update(update))
             
             # Отправляем ответ
             self.send_response(200)
