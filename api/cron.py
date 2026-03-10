@@ -151,8 +151,14 @@ class handler(BaseHTTPRequestHandler):
             # Инициализация при первом запросе
             ensure_initialized()
             
-            # Выполнение автопубликации
-            result = asyncio.run(auto_publish())
+            # Выполнение автопубликации с правильным event loop
+            try:
+                loop = asyncio.get_event_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+            
+            result = loop.run_until_complete(auto_publish())
             
             # Отправка ответа
             self.send_response(200)

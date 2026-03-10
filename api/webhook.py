@@ -95,8 +95,14 @@ class handler(BaseHTTPRequestHandler):
             # Создаем Update объект
             update = Update.de_json(update_data, app.bot)
             
-            # Обработка update асинхронно
-            asyncio.run(app.process_update(update))
+            # Обработка update асинхронно с правильным event loop
+            try:
+                loop = asyncio.get_event_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+            
+            loop.run_until_complete(app.process_update(update))
             
             # Отправляем ответ
             self.send_response(200)
